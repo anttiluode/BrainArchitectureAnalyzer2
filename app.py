@@ -29,7 +29,7 @@ def summary_markdown(result: dict) -> str:
         "",
         "The H/S/L labels are **descriptive coarse-graining of recurring signal states**. They are not labels for thoughts, consciousness, or anatomical connectivity.",
         "",
-        "| representation | split-half transition similarity | occupancy similarity | H | L | S |",
+        "| representation | frozen split-half transition similarity | occupancy similarity | H | L | S |",
         "|---|---:|---:|---:|---:|---:|",
     ]
     for name, a in result["analyses"].items():
@@ -46,6 +46,8 @@ def summary_markdown(result: dict) -> str:
         "- **PCA-bandpower**: closest control to the old BrainArchitectureAnalyzer: electrode×band power → PCA → states.",
         "- **ICA-bandpower**: independent components of the same power-modulation features → states. This tests whether rotating away higher-order dependence changes the state grammar.",
         "- **IVA-broadband**: complex STFT sensor mixtures → frequency-coupled AuxIVA → source×band trajectories → states. This is the arm that preserves phase/frequency structure and attacks the frequency-permutation problem.",
+        "",
+        "For the stability scores, the representation, state coordinates, and K-means map are fitted on half A and frozen before half B is replayed.",
         "",
         "The immediate gate is not which plot looks nicer. It is whether the source-space state grammar is more reproducible across time, channel subsets, and later recordings.",
     ]
@@ -98,9 +100,9 @@ with gr.Blocks(title="BrainArchitectureAnalyzer2") as app:
             region = gr.Dropdown(list(EEG_REGIONS.keys()), value="Occipital", label="Region")
             latent = gr.Slider(2, 16, value=8, step=1, label="State-space dimensions")
             states = gr.Slider(3, 30, value=12, step=1, label="K-means states")
-            iva_iter = gr.Slider(5, 80, value=35, step=5, label="AuxIVA iterations")
-            max_ch = gr.Slider(2, 24, value=12, step=1, label="Maximum channels")
-            max_seconds = gr.Slider(15, 600, value=180, step=15, label="Analyze first N seconds")
+            iva_iter = gr.Slider(5, 80, value=20, step=5, label="AuxIVA iterations")
+            max_ch = gr.Slider(2, 24, value=8, step=1, label="Maximum channels")
+            max_seconds = gr.Slider(15, 600, value=120, step=15, label="Analyze first N seconds")
             run = gr.Button("Analyze coordinate systems", variant="primary")
         with gr.Column(scale=2):
             summary = gr.Markdown("Upload an EDF to compare PCA, ICA, and IVA state grammars.")
