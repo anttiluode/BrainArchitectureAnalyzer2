@@ -1,5 +1,7 @@
 # BrainArchitectureAnalyzer2
 
+![pic](pic.png)
+
 GPT-5.6 Sol rebuild of the old `BrainArchitectureAnalyzer` after the Monday / ICA / IVA / FunctionalArbors work.
 
 The old analyzer had a good visual instinct and an overconfident interpretation. It took EEG electrode×band-power features, plotted their correlation matrix, compressed them with PCA, clustered the trajectory, built a state-transition matrix, and called persistent/high-connectivity states **loops** and **hubs**.
