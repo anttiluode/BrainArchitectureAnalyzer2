@@ -183,11 +183,16 @@ def auxiva(X: np.ndarray, n_iter: int = 35) -> tuple[np.ndarray, np.ndarray, np.
         phi = 1.0 / np.maximum(r, 1e-7)
 
         for s in range(C):
+            covs = np.einsum(
+                "fct,ft,fdt->fcd",
+                Xw,
+                phi[s][None, :].repeat(F, axis=0),
+                Xw.conj(),
+                optimize=True,
+            ) / max(1, T)
+            covs += EPS * eye[None, :, :]
             for f in range(F):
-                Xf = Xw[f]
-                weighted = Xf * phi[s][None, :]
-                cov = (weighted @ Xf.conj().T) / max(1, T)
-                cov += EPS * eye
+                cov = covs[f]
                 A = W[f] @ cov
                 try:
                     w = np.linalg.solve(A, eye[:, s])
@@ -337,19 +342,28 @@ def transition_similarity(A: np.ndarray, B: np.ndarray) -> float:
     return float(np.dot(a, b) / den) if den > EPS else 0.0
 
 
-def split_half_state_stability(features: np.ndarray, n_states: int, latent_dim: int, random_state: int = 42) -> dict[str, float]:
-    """Fit coordinates+states on first half, replay the same map on second half."""
-    x = np.asarray(features, float)
-    mid = len(x) // 2
-    if mid < max(20, n_states * 2) or len(x) - mid < 10:
+def state_stability_train_test(
+    train_features: np.ndarray,
+    test_features: np.ndarray,
+    n_states: int,
+    latent_dim: int,
+    random_state: int = 42,
+) -> dict[str, float]:
+    """Freeze feature scaling, state coordinates and K-means on train; replay test."""
+    a0 = np.asarray(train_features, float)
+    b0 = np.asarray(test_features, float)
+    if len(a0) < max(20, n_states * 2) or len(b0) < 10:
         return {"transition_similarity": float("nan"), "occupancy_similarity": float("nan")}
 
-    scaler = StandardScaler().fit(x[:mid])
-    a = scaler.transform(x[:mid])
-    b = scaler.transform(x[mid:])
+    scaler = StandardScaler().fit(a0)
+    a = scaler.transform(a0)
+    b = scaler.transform(b0)
     n = max(2, min(int(latent_dim), a.shape[0] - 1, a.shape[1]))
-    pca = PCA(n_components=n, random_state=random_state).fit(a)
-    za, zb = pca.transform(a), pca.transform(b)
+    if a.shape[1] > n:
+        pca = PCA(n_components=n, random_state=random_state).fit(a)
+        za, zb = pca.transform(a), pca.transform(b)
+    else:
+        za, zb = a, b
     k = max(2, min(int(n_states), max(2, len(za) // 8)))
     km = KMeans(n_clusters=k, random_state=random_state, n_init=20).fit(za)
     la, lb = km.labels_, km.predict(zb)
@@ -363,6 +377,52 @@ def split_half_state_stability(features: np.ndarray, n_states: int, latent_dim: 
     return {
         "transition_similarity": transition_similarity(Ta, Tb),
         "occupancy_similarity": float(1.0 - js),
+    }
+
+
+def frozen_split_half_stabilities(
+    X: np.ndarray,
+    freqs: np.ndarray,
+    band: np.ndarray,
+    cfg: AnalysisConfig,
+) -> dict[str, dict[str, float]]:
+    """End-to-end split-half gate: fit each representation on half A, freeze, replay half B."""
+    mid = X.shape[2] // 2
+    if mid < 20 or X.shape[2] - mid < 10:
+        nan = {"transition_similarity": float("nan"), "occupancy_similarity": float("nan")}
+        return {k: dict(nan) for k in ("PCA-bandpower", "ICA-bandpower", "IVA-broadband")}
+
+    band_a, band_b = band[:mid], band[mid:]
+
+    scaler_p = StandardScaler().fit(band_a)
+    pa, pb = scaler_p.transform(band_a), scaler_p.transform(band_b)
+    n = max(2, min(int(cfg.latent_dim), pa.shape[0] - 1, pa.shape[1]))
+    pca = PCA(n_components=n, random_state=cfg.random_state).fit(pa)
+    pca_a, pca_b = pca.transform(pa), pca.transform(pb)
+
+    scaler_i = StandardScaler().fit(band_a)
+    ia, ib = scaler_i.transform(band_a), scaler_i.transform(band_b)
+    nica = max(2, min(int(cfg.latent_dim), ia.shape[0] - 1, ia.shape[1]))
+    ica = FastICA(
+        n_components=nica,
+        whiten="unit-variance",
+        random_state=cfg.random_state,
+        max_iter=1500,
+        tol=1e-4,
+    ).fit(ia)
+    ica_a, ica_b = ica.transform(ia), ica.transform(ib)
+
+    Xa, Xb = X[:, :, :mid], X[:, :, mid:]
+    Ya, W, Vwhite = auxiva(Xa, cfg.iva_iterations)
+    Xbw = np.einsum("fij,fjt->fit", Vwhite, Xb, optimize=True)
+    Yb = np.einsum("fsc,fct->fst", W, Xbw, optimize=True)
+    iva_a, _ = iva_source_band_features(Ya, freqs)
+    iva_b, _ = iva_source_band_features(Yb, freqs)
+
+    return {
+        "PCA-bandpower": state_stability_train_test(pca_a, pca_b, cfg.n_states, cfg.latent_dim, cfg.random_state),
+        "ICA-bandpower": state_stability_train_test(ica_a, ica_b, cfg.n_states, cfg.latent_dim, cfg.random_state),
+        "IVA-broadband": state_stability_train_test(iva_a, iva_b, cfg.n_states, cfg.latent_dim, cfg.random_state),
     }
 
 
@@ -404,11 +464,11 @@ def analyze_array(
         },
     }
 
+    frozen_stability = frozen_split_half_stabilities(X, freqs, band, cfg)
     analyses: dict[str, Any] = {}
     for name, feats in representations.items():
         st = fit_states(feats, cfg.n_states, cfg.latent_dim, cfg.random_state)
-        stability = split_half_state_stability(feats, cfg.n_states, cfg.latent_dim, cfg.random_state)
-        st["stability"] = stability
+        st["stability"] = frozen_stability[name]
         st["representation_meta"] = rep_meta[name]
         analyses[name] = st
 
