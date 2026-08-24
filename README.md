@@ -87,7 +87,7 @@ That distinction is intentional.
 
 ## The first real gate: stability, not prettiness
 
-Every representation gets the same downstream state analysis. The first half of the recording fits the coordinate compression and K-means state map; the second half is replayed through that frozen map.
+Every representation gets the same downstream state analysis. For the stability gate, the **representation itself is fitted on the first half and frozen**: PCA/ICA are fitted only on half A; AuxIVA learns its per-frequency whitener and demixer only on half A. Half B is then replayed through those frozen transforms. The downstream state scaling/compression and K-means map are likewise fitted on A and frozen on B.
 
 We report:
 
