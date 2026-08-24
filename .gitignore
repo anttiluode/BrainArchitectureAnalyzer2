@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.edf
+*.fif
+*.set
+*.bdf
+*_receipt.json
