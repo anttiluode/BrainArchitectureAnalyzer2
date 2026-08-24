@@ -87,28 +87,43 @@ These are **descriptive tokens for a state-transition graph**. They are not labe
 
 That distinction is intentional.
 
-## The first real gate: stability, not prettiness
+## Stability receipt
 
-Every representation gets the same downstream state analysis. For the stability gate, the **representation itself is fitted on the first half and frozen**: PCA/ICA are fitted only on half A; AuxIVA learns its per-frequency whitener and demixer only on half A. Half B is then replayed through those frozen transforms. The downstream state scaling/compression and K-means map are likewise fitted on A and frozen on B.
+Every representation gets the same downstream state analysis. For the displayed split-half stability number, the **representation itself is fitted on the first half and frozen**: PCA/ICA are fitted only on half A; AuxIVA learns its per-frequency whitener and demixer only on half A. Half B is replayed through those frozen transforms. The downstream state scaling/compression and K-means map are likewise fitted on A and frozen on B.
 
 We report:
 
 - **split-half transition similarity** — cosine similarity between the two state-transition matrices;
 - **occupancy similarity** — `1 - Jensen-Shannon distance` between state occupancies.
 
-The immediate question is:
+These numbers are receipts attached to the visualizations, not pass/fail gates. A beautiful Sankey can coexist with a weak stability score.
 
-> Does ICA/IVA source space produce a more reproducible state grammar than the old PCA sensor-feature space?
+## First real EEG observation
 
-A UMAP/Sankey that looks impressive is not a pass.
+The first 120-second occipital EDF run used 8 channels and 12 states. It produced:
 
-Later gates should repeat the test across:
+```text
+representation      transition similarity    occupancy similarity
+PCA-bandpower              0.631                    0.859
+ICA-bandpower              0.631                    0.859
+IVA-broadband              0.455                    0.681
+```
 
-- channel dropout / different electrode subsets;
-- different time blocks;
-- repeated sessions from the same person;
-- synthetic mixtures with known latent sources;
-- time/frequency shuffles that preserve easy marginals while destroying source structure.
+The immediate result is therefore modest: **the coarse band-power state description was more reproducible across the two halves than the present 8-source broadband AuxIVA description.** This does not establish that PCA is a more fundamental brain representation; band power is a much stronger temporal/frequency coarse-graining and therefore has an easier route to stability.
+
+The exact PCA/ICA equality is also mostly architectural, not biological. In the current pipeline, PCA and FastICA span the same whitened subspace and the downstream state finder standardizes coordinates and uses Euclidean K-means. An orthogonal ICA rotation preserves pairwise Euclidean distances, so K-means can recover the same partition even though the plotted axes are rotated. In other words, the current H/S/L observer is largely blind to the specific identity of ICA axes.
+
+This is worth keeping visible because it clarifies what each layer means:
+
+```text
+ICA may change axis meaning
+        ↓
+Euclidean K-means sees cloud geometry
+        ↓
+if geometry is only rotated, the state graph need not change
+```
+
+IVA is genuinely different here because it goes back to complex broadband EEG and changes the object entering the state analysis rather than merely rotating the same band-power subspace.
 
 ## Why IVA is the important new arm
 
@@ -121,6 +136,8 @@ X_c(f,t)  ->  W(f)  ->  Y_s(f,t)
 ```
 
 and couples the same source across frequency through its broadband source-vector norm. This is much closer to the Monday question about a physical `H(ω)` / demixing transform than ICA on band-power features is.
+
+The first real recording did **not** show that this richer representation was more stable. That negative result stays in the repo rather than being explained away.
 
 ## Why this relates to FunctionalArbors / Monday
 
@@ -142,7 +159,7 @@ Hub / State / Loop coarse grammar
 
 A matrix is not being discarded. It appears at several descriptive levels.
 
-The new hypothesis is that some matrices may be **shadows of physical mechanisms** rather than the mechanism itself.
+The working idea is that some matrices may be **shadows of physical mechanisms** rather than the mechanism itself.
 
 ## Run the UI
 
@@ -211,10 +228,8 @@ It does not establish that an ICA/IVA component is a biological neural source me
 
 It does not establish that H/S/L is a neural language.
 
-It asks a narrower, testable question:
+The useful question is narrower:
 
-> **After removing some measurement mixing, do recurring brain-state dynamics become more invariant?**
+> **How much of an apparent brain-state architecture survives a change from sensor coordinates to attempted source coordinates?**
 
-If the answer is no, the old state maps were probably more coordinate-dependent than we hoped.
-
-If the answer is yes, then the old MTX idea becomes more interesting: H/S/L may be a useful coarse-graining of *source-space dynamics* rather than merely a decorative grammar over sensor mixtures.
+The answer may differ by representation, timescale and recording. The purpose of the repo is to make that dependence visible rather than to force one coordinate system to win.
